@@ -42,5 +42,5 @@ This code and data were used to generate Table 1, Fig. 2, and Supplementary Tabl
 This code was used to evaluate the accuracy of JI estimates as a function of hash function selection.
 
 1. testhash.cpp
-  1. This code evaluates the performance of the HLL and experimental, related structures for cardinality estimation.
-  2. We used this code, extracting only the HLL-relevant data, to provide experimental results relating to the performance of hash functions in the text.
+    1. This code evaluates the performance of the HLL and experimental, related structures for cardinality estimation.
+    2. We used this code, extracting only the HLL-relevant data, to provide experimental results relating to the performance of hash functions in the text.
