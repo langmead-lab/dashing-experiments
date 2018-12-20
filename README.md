@@ -35,3 +35,12 @@ This code and data were used to generate Table 1, Fig. 2, and Supplementary Tabl
     1. Contains code for generating Fig. 2 from the output of `pairwise_benchmark`.
 5. `ji_range_postprocess.py`
     1. Contains code for finalizing preparation of Table 1 from the output of `pairwise_benchmark`.
+
+
+#### hash
+
+This code was used to evaluate the accuracy of JI estimates as a function of hash function selection.
+
+1. testhash.cpp
+  1. This code evaluates the performance of the HLL and experimental, related structures for cardinality estimation.
+  2. We used this code, extracting only the HLL-relevant data, to provide experimental results relating to the performance of hash functions in the text.
