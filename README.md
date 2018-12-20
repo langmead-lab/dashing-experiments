@@ -17,6 +17,8 @@ This code was used to generate Fig. 3, Table 2, and Supplementary Table 3.
 
 1. `all_pairwise.py`
     1. Performs all pairwise comparisons between a set of genomes across varying sketch size and kmer length, comparing bindash, mash, and several estimation methods for HyperLogLogs.
+2. filenames.txt
+    1. A list of all genomes used for this experiment. These were fetched using bonsai's (https://github.com/dnbaker/bonsai/) `download_genomes.py` script, requesting `all` genomes.
 
 ####  accuracy
 
