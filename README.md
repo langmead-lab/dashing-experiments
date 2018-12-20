@@ -31,3 +31,7 @@ This code and data were used to generate Table 1, Fig. 2, and Supplementary Tabl
     2. This can be rather memory-intensive due to the use of full hash sets; for this reason, we suggest omitting large genomes from the call generating the table used in pairselector.py.
 3. `genomes_for_exp.txt`
     1. The set of genomes emitted by pairselector.py.
+4. `ji_range.Rmd`
+    1. Contains code for generating Fig. 2 from the output of `pairwise_benchmark`.
+5. `ji_range_postprocess.py`
+    1. Contains code for finalizing preparation of Table 1 from the output of `pairwise_benchmark`.

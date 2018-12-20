@@ -1,0 +1,183 @@
+---
+title: "JI range experiment"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r libraries}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(tables)
+library(grid)
+library(gridExtra)
+library(tables)
+```
+
+```{r wd}
+setwd('~/git/bonsai-experiments/hll')
+```
+
+```{r grid_arrange_shared_legend}
+grid_arrange_shared_legend <- function(..., ncol = length(list(...)), nrow = 1, position = c("bottom", "right")) {
+
+  plots <- list(...)
+  position <- match.arg(position)
+  g <- ggplotGrob(plots[[1]] + theme(legend.position = position))$grobs
+  legend <- g[[which(sapply(g, function(x) x$name) == "guide-box")]]
+  lheight <- sum(legend$height)
+  lwidth <- sum(legend$width)
+  gl <- lapply(plots, function(x) x + theme(legend.position="none"))
+  gl <- c(gl, ncol = ncol, nrow = nrow)
+
+  combined <- switch(position,
+                     "bottom" = arrangeGrob(do.call(arrangeGrob, gl),
+                                            legend,
+                                            ncol = 1,
+                                            heights = unit.c(unit(1, "npc") - lheight, lheight)),
+                     "right" = arrangeGrob(do.call(arrangeGrob, gl),
+                                           legend,
+                                           ncol = 2,
+                                           widths = unit.c(unit(1, "npc") - lwidth, lwidth)))
+  grid.newpage()
+  grid.draw(combined)
+  # return gtable invisibly
+  invisible(combined)
+}
+```
+
+```{r read_table}
+res_fn <- 'ji.range.experiment.tsv'
+m_orig <- read.table(res_fn, header=T, sep='\t', comment.char='')
+m_orig$Exact <- signif(m_orig$Exact, 3)
+colnames(m_orig)[1] <- 'Path1'
+```
+
+```{r transform}
+#m_gath <- m_orig %>%
+#    gather(Original, MLE, JMLE, mash, bindash, key=method, value=ji) %>%
+#    mutate(ji_diff = ji - Exact)
+m_gath <- m_orig %>%
+    gather(Original, MLE, JMLE, mash, bindash, key=method, value=ji) %>%
+    mutate(ji_diff = ji - Exact)
+#m_gath <- m_gath %>% filter(method != 'bindash')
+```
+
+
+```{r tabulate_big}
+ji_range_table <- function(m, fn='ji_range') {
+    
+    xform_gath <- function(mtmp) {
+        m <- mtmp %>% select(-Path1, -Path2)
+        colnames(m)[1] <- 'k'
+        colnames(m)[2] <- 'p'
+        m <- m %>% transform(exact_bin=round(Exact - 0.05, digits=1))
+        m$method <- plyr::mapvalues(m$method,
+            from = c('mash',
+                     'bindash',
+                     'Original',
+                     'MLE',
+                     'JMLE'),
+            to = c(  'Mash',
+                     'BinDash',
+                     'HLL (Orig)',
+                     'HLL (Ertl-MLE)',
+                     'HLL (Ertl-JMLE)'))
+        m$method <- factor(m$method)
+        m$method <- factor(m$method, levels(m$method)[c(5, 1, 4, 3, 2)])
+        m <- m %>% group_by(exact_bin, k, p, method) %>% 
+              summarise(n=n(), ji_diff_summ=mean(ji_diff**2))
+        m$exact_bin <- factor(paste0(m$exact_bin, ' -- ', m$exact_bin + 0.1))
+        m
+    }
+
+    ji_range_table_helper <- function(m) {
+        tabular((Heading ('J bin') * factor(exact_bin) * Heading('k') * factor(k) * Heading('log2(sketch bytes)') * factor(p)) ~
+                Justify(r) * Heading() * factor(method) * Heading() * (Format(sprintf("%0.1f")) * I(ji_diff_summ*1e6)) * Heading() * identity + Heading('n') * n * Heading() * mean, data=m)
+    }
+    
+    emit <- function(tab, fn) {
+        fn_latex <- paste0(fn, '.latex_snippet')
+        write("\\resizebox{\\columnwidth}{!}{%", file=fn_latex)
+        capture.output(latex(tab), file=fn_latex, append=T)
+        write("}", file=fn_latex, append=T)
+        write.csv.tabular(tab, file=paste0(fn, '.csv'))
+    }
+    
+    tab_bg <- ji_range_table_helper(xform_gath(m))
+    tab_sm <- ji_range_table_helper(xform_gath(m) %>% filter(k == 31 & p > 11))
+    
+    emit(tab_bg, paste0(fn, '_big'))
+    emit(tab_sm, fn)
+    
+    list(big=tab_bg, small=tab_sm)
+}
+
+ji_range_table(m_gath)
+```
+
+The following summarizes sum-of-squared-errors for each of the estimation methods _overall_, over all sketch sizes and k-mer lengths.  So maybe not so informative for the paper but a nice check that what we think about the relative merits is true overall.
+
+```{r sse}
+m_summ = m_gath %>% group_by(method) %>% summarise(sse=sum(ji_diff ** 2))
+ggplot(m_summ, aes(x=method, y=sse)) +
+    geom_bar(stat="identity") +
+    labs(x='Sketch & estimation method', y='Sum of squared errors')
+```
+```{r se}
+m_summ = m_gath %>% group_by(method) %>% summarise(sse=sum(ji_diff))
+ggplot(m_summ, aes(x=method, y=sse)) +
+    geom_bar(stat="identity") +
+    labs(x='Sketch & estimation method', y='Sum of errors')
+```
+
+```{r sse_plot}
+plot_for_kmer <- function(k) {
+    mtmp <- m_gath %>%
+        filter(KmerSize == k) %>%
+        group_by(Bytes.in.Sketch, method) %>%
+        summarise(sse=sum(ji_diff ** 2))
+    ggplot(mtmp, aes(x=Bytes.in.Sketch, y=sse, color=method)) +
+        geom_line() +
+        theme_bw() +
+        labs(x=paste0('SketchP (', k, ')'))
+}
+```
+
+```{r sse_plot_k16}
+plot_for_kmer(16)
+```
+```{r error_plot}
+plot_for_kmer_and_p <- function(m, k, p) {
+    mtmp <- m %>%
+        filter(KmerSize == k, Bytes.in.Sketch == p)
+    ggplot(mtmp, aes(x=Exact, y=ji_diff, color=method)) +
+        theme_bw() +
+        theme(legend.title=element_blank()) +
+        geom_point(size=0.2, alpha=0.2) +
+        geom_smooth(se=F) +
+        labs(x=paste0('True J'), y='Est J - True J', title=TeX(sprintf('k = %d, $\\log_2$(sketch bytes) = %d', k, p)))
+}
+```
+
+```{r error_plot_k16}
+plot_ji_range_4panel <- function(m) {
+    mtmp <- m_gath %>% filter(method == 'MLE' | method == 'mash' | method == 'bindash')
+    mtmp$method <- plyr::mapvalues(
+        factor(mtmp$method),
+        from = c('MLE', 'mash', 'bindash'), to = c('Dashing (MLE)', 'Mash   ', 'BinDash   '))
+    mtmp$method <- factor(mtmp$method, levels(mtmp$method)[c(2, 1, 3)])
+    kp1 <- plot_for_kmer_and_p(mtmp, 16, 10)
+    kp2 <- plot_for_kmer_and_p(mtmp, 16, 14)
+    kp3 <- plot_for_kmer_and_p(mtmp, 21, 10)
+    kp4 <- plot_for_kmer_and_p(mtmp, 21, 14)
+    grid_arrange_shared_legend(kp1, kp2, kp3, kp4, ncol=2, nrow=2, position='bottom')
+}
+
+pdf(file='dashing_ji_range.pdf', onefile=F)
+plot_ji_range_4panel(m_gath)
+dev.off()
+
+plot_ji_range_4panel(m_gath)
+```
