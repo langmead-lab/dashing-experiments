@@ -1,0 +1,168 @@
+---
+title: "dsexp_result"
+output: html_document
+---
+
+```{r libraries}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(grid)
+library(gridExtra)
+library(tables)
+```
+
+```{r wd}
+setwd('~/git/dashing-experiments/dsexp')
+```
+
+```{r combined_plot}
+grid_arrange_shared_legend <- function(..., ncol = length(list(...)), nrow = 1, position = c("bottom", "right")) {
+
+  plots <- list(...)
+  position <- match.arg(position)
+  g <- ggplotGrob(plots[[1]] + theme(legend.position = position))$grobs
+  legend <- g[[which(sapply(g, function(x) x$name) == "guide-box")]]
+  lheight <- sum(legend$height)
+  lwidth <- sum(legend$width)
+  gl <- lapply(plots, function(x) x + theme(legend.position="none"))
+  gl <- c(gl, ncol = ncol, nrow = nrow)
+
+  combined <- switch(position,
+                     "bottom" = arrangeGrob(do.call(arrangeGrob, gl),
+                                            legend,
+                                            ncol = 1,
+                                            heights = unit.c(unit(1, "npc") - lheight, lheight)),
+                     "right" = arrangeGrob(do.call(arrangeGrob, gl),
+                                           legend,
+                                           ncol = 2,
+                                           widths = unit.c(unit(1, "npc") - lwidth, lwidth)))
+  grid.newpage()
+  grid.draw(combined)
+  # return gtable invisibly
+  invisible(combined)
+}
+```
+
+```{r read_table}
+m_abs  <- read.table('containment.abserror.tsv', header=T, sep='\t', comment.char='')
+m_bias <- read.table('containment.bias.tsv',     header=T, sep='\t', comment.char='')
+m_mse  <- read.table('containment.mse.tsv',      header=T, sep='\t', comment.char='')
+m_abs$error_type  <- 'abs'
+m_bias$error_type <- 'bias'
+m_mse$error_type  <- 'mse'
+m_orig <- rbind(m_abs, m_bias, m_mse)
+colnames(m_orig)[1] <- 'size1'
+m_orig$true.ji <- signif(m_orig$true.ji, 3)
+m_orig$bfji_diff      <- m_orig$bfji      - m_orig$hllji
+m_orig$bfji_orig_diff <- m_orig$bfji_orig - m_orig$hllji
+m_orig$mhji_diff      <- m_orig$mhji      - m_orig$hllji
+m_mse <- m_orig %>% gather('sketch_type', 'error',
+    bfji, bfji_orig, hllji, mhji, bfji_diff, bfji_orig_diff, mhji_diff)
+```
+
+```{r table}
+smallbig_table <- function(m, fn='smallbig') {
+    
+    m$size12 <- factor(paste0(log2(m$size1), ', ', log2(m$size2)))
+    m <- m %>% filter(error_type != 'bias')
+    m <- m %>% filter(sketch_type != 'bfji_diff' & sketch_type != 'bfji_orig_diff' & sketch_type != 'mhji_diff')
+    m <- m %>% filter(log2(sketch.size) %% 2 == 0)
+    m <- m %>% filter((log2(size1) - log2(size2)) %% 2 == 0)
+    m <- m %>% filter(!(log2(size1) == 14 & log2(size2) == 14))
+    m$sketch_type <- plyr::mapvalues(factor(m$sketch_type),
+        from = c('bfji',
+                 'bfji_orig',
+                 'hllji',
+                 'mhji'),
+        to = c('Bloom+',
+               'Bloom',
+               'HLL (MSE)',
+               'MinHash'))
+    m$sketch_type <- factor(m$sketch_type, levels(m$sketch_type)[c(4, 2, 1, 3)])
+    m$sketch_size <- factor(log2(m$sketch.size))
+    m$error_type <- plyr::mapvalues(factor(m$error_type),
+        from = c('abs',
+                 'mse'),
+        to = c('Sum of absolute error',
+               'Sum of squared error'))
+
+    smallbig_table_helper <- function(m) {
+        tab <- suppressWarnings(tabular((Heading('Set sizes (log2)') * size12 * Heading('True J') * factor(true.ji) * Heading('Sketch bytes (log2)') * sketch_size) ~
+                Heading() * factor(error_type) * Heading() * sketch_type * Heading() * error * Heading() * identity, data=m))
+        tab[! is.na(tab[,4]),]
+    }
+    
+    tab <- smallbig_table_helper(m)
+    write("\\resizebox{\\columnwidth}{!}{%", file=fn)
+    capture.output(latex(tab), file=paste0(fn, '.latex_snippet'), append=T)
+    write("}", file=fn, append=T)
+    write.csv.tabular(tab, file=paste0(fn, '.csv'))
+    tab
+}
+
+smallbig_table(m_mse)
+```
+
+```{r plot_diffs}
+int_breaks <- function(x, n = 5) pretty(x, n)[pretty(x, n) %% 1 == 0]
+
+plot_diffs <- function(
+    target=0.111,
+    tolerance=0.001,
+    limits=c(-0.0025, 0.001),
+    want_error_type='abs')
+{
+    mtmp <- m_mse %>% filter(abs(true.ji - target) < tolerance &
+            sketch_type %in% c('bfji_diff', 'bfji_orig_diff', 'mhji_diff') &
+            error_type == want_error_type)
+    mtmp$size_pair <- paste0(log2(mtmp$size1), ', ', log2(mtmp$size2))
+    mtmp$sketch_type <- plyr::mapvalues(mtmp$sketch_type,
+        from = c('bfji_diff',
+                 'bfji_orig_diff',
+                 'mhji_diff'),
+        to = c('Bloom+ - HLL',
+               'Bloom - HLL',
+               'MinHash - HLL'))
+    #ord <- as.character(unique(sort(as.numeric(sub(',.*', '', mtmp$size_pair)))))
+    #mtmp$size_pair <- factor(mtmp$size_pair, levels=ord)
+    ggplot(mtmp,
+        aes(x=log2(sketch.size), y=error,
+            color=factor(size_pair),
+            linetype=sketch_type)) +
+        geom_hline(yintercept=0, size=1) +
+        geom_line() +
+        geom_point() +
+        labs(x="log2(sketch size)",
+             y=expression(Delta * " abs error"),
+             color=expression('Set sizes (log'[2]*')'),
+             linetype=expression(Delta * ' abs error')) +
+        coord_cartesian(ylim=limits) +
+        scale_x_continuous(breaks = int_breaks) +
+        theme(legend.title=element_blank()) +
+        theme_bw()
+}
+```
+
+```{r plot_0111_out}
+plot_diffs(0.111, 0.001, NULL)
+```
+
+
+```{r plot_6panel}
+plot_6panel <- function() {
+    grid_arrange_shared_legend(
+        plot_diffs(0.111, 0.001, c(-0.0025, 1.0)),
+        plot_diffs(0.0465, 0.0001, c(-0.0025, 1.0)),
+        plot_diffs(0.111, 0.001, c(-0.0025, 0.07)),
+        plot_diffs(0.0465, 0.0001, c(-0.0025, 0.07)),
+        plot_diffs(0.111, 0.001, c(-0.0025, 0.001)),
+        plot_diffs(0.0465, 0.0001, c(-0.0025, 0.001)), ncol=2, nrow=3, position='right')
+}
+
+plot_6panel()
+
+pdf(file='dashing_smallbig.pdf', onefile=F)
+plot_6panel()
+dev.off()
+```
