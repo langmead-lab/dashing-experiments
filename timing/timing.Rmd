@@ -1,0 +1,200 @@
+---
+title: "HLL timing"
+output:
+  html_document: default
+  html_notebook: default
+  pdf_document: default
+---
+
+```{r libraries}
+library(dplyr)
+library(ggplot2)
+library(tables)
+library(grid)
+library(gridExtra)
+```
+
+```{r wd}
+setwd('~/git/bonsai-experiments/hll/timing')
+```
+
+```{r grid_arrange_shared_legend}
+# Borrowed from: https://rpubs.com/sjackman/grid_arrange_shared_legend
+# Thanks to Shaun Jackman
+grid_arrange_shared_legend <- function(...) {
+    plots <- list(...)
+    g <- ggplotGrob(plots[[2]] + theme(legend.position="bottom"))$grobs
+    legend <- g[[which(sapply(g, function(x) x$name) == "guide-box")]]
+    lheight <- sum(legend$height)
+    grid.arrange(
+        do.call(arrangeGrob, lapply(plots, function(x)
+            x + theme(legend.position="none"))),
+        legend,
+        ncol = 1,
+        heights = unit.c(unit(1, "npc") - lheight, lheight))
+}
+```
+
+```{r read_table}
+res_fn <- 'dashing.perf.tsv'
+m_orig <- read.table(res_fn, header=T, sep='\t', comment.char='')
+```
+
+```{r refine_table}
+m_orig$CPU <- as.numeric(sub(pattern='%', replacement='', m_orig$X.CPU))
+m_orig$X.CPU <- NULL
+colnames(m_orig)[1] <- 'tool'
+m_orig$tool <- sub(pattern='_both', replacement='', m_orig$tool)
+m_orig$tool <- sub(pattern='_original', replacement='_orig', m_orig$tool)
+m_orig <- m_orig %>% filter(!grepl('improved', tool))
+m_orig$tool <- plyr::mapvalues(factor(m_orig$tool),
+    from = c('dashing_ertl_jmle',
+             'dashing_ertl_mle',
+             'dashing_orig',
+             'mash',
+             'bindash'),
+    to = c(  'HLL (Ertl-JMLE)',
+             'HLL (Ertl-MLE)',
+             'HLL (Orig)',
+             'Mash',
+             'BinDash'))
+m_orig$subcommand <- plyr::mapvalues(m_orig$subcommand,
+    from = c('dist',
+             'sketch',
+             'both'),
+    to = c(  'Distance',
+             'Sketch',
+             'Both'))
+m_orig$subcommand <- factor(m_orig$subcommand, levels(m_orig$subcommand)[c(2, 3, 1)])
+m_orig$tool <- factor(m_orig$tool, levels(m_orig$tool)[c(5, 1, 4, 3, 2)])
+```
+
+```{r combine_sketch_distance}
+m_dist <- m_orig %>% filter((tool == 'Mash' | tool == 'BinDash') & subcommand == 'Distance')
+m_sketch <- m_orig %>% filter((tool == 'Mash' | tool == 'BinDash') & subcommand == 'Sketch')
+stopifnot(all(m_dist$tool == m_sketch$tool))
+stopifnot(all(m_dist$k == m_sketch$k))
+stopifnot(all(m_dist$sketchsz == m_sketch$sketchsz))
+frac_wall <- (m_dist$Wall.Time)/(m_dist$Wall.Time + m_sketch$Wall.Time)
+m_both <- data.frame(subcommand='Both', k=m_dist$k, sketchsz=m_dist$sketchsz,
+                     utime=m_dist$utime + m_sketch$utime,
+                     systime=m_dist$systime + m_sketch$systime,
+                     CPU=m_dist$CPU * frac_wall +  m_sketch$CPU * (1.0 - frac_wall),
+                     Peakmemory.kB.=pmax(m_dist$Peakmemory.kB., m_sketch$Peakmemory.kB.),
+                     Wall.Time=m_dist$Wall.Time + m_sketch$Wall.Time,
+                     tool=m_dist$tool)
+m_orig <- rbind(m_orig, m_both)
+stopifnot(length(unique(table(m_orig$tool))) == 1)
+```
+
+```{r rename}
+m <- m_orig
+```
+
+```{r table}
+performance_table <- function(m, fn='performance') {
+    
+    m_all <- data.frame(m)
+
+    performance_table_helper <- function(m) {
+        tabular((Heading() * subcommand * Justify(r) * (Heading('Wall clock (s)') * Format(sprintf("%d")) * round(Wall.Time) + Heading('Avg \\# CPUs') * I(CPU/100.0) + Format(sprintf("%d")) * Heading('Peak mem (MB)') * I(round(Peakmemory.kB./1024))) * Heading('$k$') * factor(k) * Heading('$\\log2(size)$') * factor(sketchsz) * Heading() * identity) ~
+                Heading() * tool, data=m)
+    }
+    
+    emit <- function(tab, fn) {
+        fn_latex <- paste0(fn, '.latex_snippet')
+        write("\\resizebox{\\columnwidth}{!}{%", file=fn_latex)
+        capture.output(latex(tab), file=fn_latex, append=T)
+        write("}", file=fn_latex, append=T)
+        write.csv.tabular(tab, file=paste0(fn, '.csv'))
+    }
+    
+    tab_bg <- performance_table_helper(m)
+    tab_sm <- performance_table_helper(m %>% filter(k == 31))
+    
+    emit(tab_bg, paste0(fn, '_big'))
+    emit(tab_sm, fn)
+    
+    list(big=tab_bg, small=tab_sm)
+}
+
+performance_table(m)
+```
+
+```{r m_rename}
+m <- m_orig
+m$k_and_sk <- paste0(m$k, ',', m$sketchsz)
+```
+
+```{r plot_time}
+plot_time <- function(m) {
+    ggplot(m, aes(x=k_and_sk, y=Wall.Time)) +
+        geom_bar(stat="identity", position="dodge", aes(fill = tool)) +
+        scale_y_log10() +
+        labs(x=expression('k, log'[2] * ' (sketch size)'), y='Time (seconds)') +
+        theme_bw() +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.title=element_blank()) +
+        facet_wrap(~subcommand)
+}
+
+plot_time(m)
+
+pdf(file='dashing_time.pdf', onefile=F)
+plot_time(m)
+dev.off()
+```
+
+```{r plot_cpu}
+plot_cpu <- function(m) {
+    ggplot(m, aes(x=k_and_sk, y=CPU/100.0)) +
+        geom_bar(stat="identity", position="dodge", aes(fill = tool)) +
+        labs(x=expression('k, log'[2] * ' (sketch size)'), y='Avg # CPUs utilitized') +
+        theme_bw() +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.title=element_blank()) +
+        facet_wrap(~subcommand)
+}
+
+plot_cpu(m)
+
+pdf(file='dashing_cpu.pdf', onefile=F)
+plot_cpu(m)
+dev.off()
+```
+
+```{r plot_mem}
+plot_mem <- function(m) {
+    ggplot(m, aes(x=k_and_sk, y=Peakmemory.kB./1024)) +
+        geom_bar(stat="identity", position="dodge", aes(fill = tool)) +
+        scale_y_log10() +
+        labs(x=expression('k, log'[2] * ' (sketch size)'), y='Memory footprint (MB)') +
+        theme_bw() +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.title=element_blank()) +
+        facet_wrap(~subcommand)
+}
+
+plot_mem(m)
+
+pdf(file='dashing_mem.pdf', onefile=F)
+plot_mem(m)
+dev.off()
+```
+
+```{r plot_all}
+m$tool <- plyr::mapvalues(factor(m$tool),
+    from = c('HLL (Ertl-JMLE)',
+             'HLL (Ertl-MLE)',
+             'HLL (Orig)',
+             'Mash',
+             'BinDash'),
+    to = c(  ' HLL (Ertl-JMLE)',
+             ' HLL (Ertl-MLE)   ',
+             ' HLL (Orig)   ',
+             ' Mash   ',
+             ' BinDash   '))
+
+grid_arrange_shared_legend(plot_time(m), plot_mem(m), plot_cpu(m))
+
+pdf(file='dashing_all.pdf', onefile=F, height=10, width=8)
+grid_arrange_shared_legend(plot_time(m), plot_mem(m), plot_cpu(m))
+dev.off()
+```
