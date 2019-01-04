@@ -77,10 +77,19 @@ def submit(threads, ksz, sketchsz, outsizes, outdists, fname_paths, logfile, ske
     bashcall(f"cat {logfile}.tmp >> {logfile} && rm {logfile}.tmp")
 
 
-def submit_nocache(threads, ksz, sketchsz, outsizes, outdists, fname_paths, logfile, sketchmethod, executable="dashing", time_path="/usr/bin/time", skip_already=True):
+def submit_dashing_nocache(threads, ksz, sketchsz, outsizes, outdists, fname_paths, logfile, sketchmethod, executable="dashing", time_path="/usr/bin/time", skip_already=True):
     assert os.path.isfile(fname_paths)
     sketchstr = sm2str(sketchmethod)
     cstr = f"nohup {time_path} -v {executable} dist {sketchstr} -fbk{ksz} -p{threads} -S{sketchsz} -o{outsizes} -O{outdists} -F{fname_paths} &> {logfile}"
+    bashcall(cstr)
+
+
+def submit_mash_nocache(threads, ksz, sketchsz, outsizes, outdists, fname_paths, logfile, time_path="/usr/bin/time", skip_already=True):
+    assert os.path.isfile(fname_paths)
+    mashlog = logfile + ".both.mashlog"
+    mashout = outfile + ".both.mashout"
+    # mash sketch -p {threads} -s {1<<(sketchsz - 3 + (ksz > 16))} -k {ksz}
+    cstr = f"nohup {time_path} -v mash triangle -k {ksz} -p {threads} -s {1<<(sketchsz - 3 + (ksz > 16))} -l {fname_paths} 1> {mashout} 2> {mashlog}"
     bashcall(cstr)
 
 
@@ -94,7 +103,6 @@ def main():
     a.add_argument("--num-times", default=1, type=int)
     a.add_argument("--executable", default="dashing", type=str)
     a.add_argument("--time-path", default="/usr/bin/time", type=str)
-    a.add_argument("--do-both-only", action='store_true', help="Flag to compute dashing dist without precalculation")
     a.add_argument("--bdonly", action="store_true", help="Only perform bindash experiments.")
     args = a.parse_args()
     sizes = list(map(int, args.sketch_sizes.split(",")))
@@ -109,12 +117,6 @@ def main():
     for size in sizes:
         for k in ks:
             for sm in sketch_methods:
-                if args.bdonly:
-                    for i in range(1, args.num_times + 1):
-                        baselogf = f"{bn}.{size}.{k}.{i}.log"
-                        submit_bindashonly(args.threads, k, size, f"{bn}.{size}.{k}.{sm}.{i}.txt", f"{bn}.{size}.{k}.{sm}.{i}.dist.bin", args.fname_paths, baselogf, sm, args.executable, args.time_path,
-                                           args.skip_already_done)
-                    continue
                 for i in range(1, args.num_times + 1):
                     logf = f"{bn}.{size}.{k}.{sm}.{i}.log"
                     baselogf = f"{bn}.{size}.{k}.{i}.log"
@@ -133,6 +135,10 @@ def main():
                         submit(args.threads, k, size, f"{bn}.{size}.{k}.{sm}.{i}.txt", f"{bn}.{size}.{k}.{sm}.{i}.dist.bin", args.fname_paths, logf, sm, executable=args.executable, time_path=args.time_path, skip_already=args.skip_already_done)
                         submit_mashonly(args.threads, k, size, f"{bn}.{size}.{k}.{sm}.{i}.txt", f"{bn}.{size}.{k}.{sm}.{i}.dist.bin", args.fname_paths, baselogf, sm, args.executable, args.time_path, args.skip_already_done)
                         submit_bindashonly(args.threads, k, size, f"{bn}.{size}.{k}.{sm}.{i}.txt", f"{bn}.{size}.{k}.{sm}.{i}.dist.bin", args.fname_paths, baselogf, sm, args.executable, args.time_path, args.skip_already_done)
+                    submit_dashing_nocache(args.threads, k, size, f"{bn}.{size}.{k}.{sm}.{i}.both.txt", f"{bn}.{size}.{k}.{sm}.{i}.both.dist.bin",
+                                           args.fname_paths, logf, sm, executable=args.executable, time_path=args.time_path, skip_already=args.skip_already_done)
+                    submit_mash_nocache(args.threads, k, size, f"{bn}.{size}.{k}.{sm}.{i}.txt", f"{bn}.{size}.{k}.{sm}.{i}.dist.bin",  args.fname_paths, baselogf, sm, args.time_path, skip_already=args.skip_already_done)
+
                     run_num += 1
                     print(f"Successfully ran experiment {run_num}/{i}", file=sys.stderr)
 
