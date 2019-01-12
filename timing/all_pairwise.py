@@ -80,6 +80,7 @@ def submit(threads, ksz, sketchsz, outsizes, outdists, fname_paths, logfile, ske
 def submit_dashing_nocache(threads, ksz, sketchsz, outsizes, outdists, fname_paths, logfile, sketchmethod, executable="dashing", time_path="/usr/bin/time", skip_already=True):
     assert os.path.isfile(fname_paths)
     sketchstr = sm2str(sketchmethod)
+    logfile += ".both.log"
     cstr = f"nohup {time_path} -v {executable} dist {sketchstr} -fbk{ksz} -p{threads} -S{sketchsz} -o{outsizes} -O{outdists} -F{fname_paths} &> {logfile}"
     bashcall(cstr)
 
@@ -98,12 +99,12 @@ def main():
     a.add_argument("--sketch-sizes", help="Comma-delimited sketch sizes to use.", required=True)
     a.add_argument("--kmer-sizes", help="Comma-delimited kmer sizes to use.", required=True)
     a.add_argument("--threads", "-p", type=int, help="Number of threads to use", default=100)
-    a.add_argument("--skip-already-done", "-s", help="Whether to skip already done things", action='store_true')
     a.add_argument("--num-times", default=1, type=int)
     a.add_argument("--executable", default="dashing", type=str)
     a.add_argument("--time-path", default="/usr/bin/time", type=str)
     a.add_argument("--bdonly", action="store_true", help="Only perform bindash experiments.")
     args = a.parse_args()
+    args.skip_already_done = True
     sizes = list(map(int, args.sketch_sizes.split(",")))
     ks = list(map(int, args.kmer_sizes.split(",")))
     fname_paths = args.fname_paths
@@ -119,27 +120,27 @@ def main():
                 for i in range(1, args.num_times + 1):
                     logf = f"{bn}.{size}.{k}.{sm}.{i}.log"
                     baselogf = f"{bn}.{size}.{k}.{i}.log"
-                    if args.skip_already_done:
-                        if os.path.isfile(logf) and os.path.isfile(baselogf + ".mashlog") and os.path.isfile(baselogf + ".bindashlog"):
-                            print(f"Skipping already done experiment {run_num} at index {i}", file=sys.stderr)
-                        else:
-                            if all(not os.path.isfile(x) for x in (logf, baselogf + ".mashlog", baselogf + ".bindashlog")):
-                                submit(args.threads, k, size, f"{bn}.{size}.{k}.{sm}.{i}.txt", f"{bn}.{size}.{k}.{sm}.{i}.dist.bin",
-                                       args.fname_paths, logf, sm, executable=args.executable, time_path=args.time_path, skip_already=args.skip_already_done)
-                            elif not os.path.isfile(baselogf + ".mashlog"):
-                                submit_mashonly(args.threads, k, size, f"{bn}.{size}.{k}.{sm}.{i}.txt", f"{bn}.{size}.{k}.{sm}.{i}.dist.bin", args.fname_paths, baselogf, sm, args.executable, args.time_path, args.skip_already_done)
-                            if not os.path.isfile(baselogf + ".bindashlog"):
-                                submit_bindashonly(args.threads, k, size, f"{bn}.{size}.{k}.{sm}.{i}.txt", f"{bn}.{size}.{k}.{sm}.{i}.dist.bin", args.fname_paths, baselogf, sm, args.executable, args.time_path, args.skip_already_done)
+                    #if args.skip_already_done:
+                    if os.path.isfile(logf) and os.path.isfile(baselogf + ".mashlog") and os.path.isfile(baselogf + ".bindashlog"):
+                        print(f"Skipping already done experiment {run_num} at index {i}", file=sys.stderr)
                     else:
-                        submit(args.threads, k, size, f"{bn}.{size}.{k}.{sm}.{i}.txt", f"{bn}.{size}.{k}.{sm}.{i}.dist.bin", args.fname_paths, logf, sm, executable=args.executable, time_path=args.time_path, skip_already=args.skip_already_done)
-                        submit_mashonly(args.threads, k, size, f"{bn}.{size}.{k}.{sm}.{i}.txt", f"{bn}.{size}.{k}.{sm}.{i}.dist.bin", args.fname_paths, baselogf, sm, args.executable, args.time_path, args.skip_already_done)
-                        submit_bindashonly(args.threads, k, size, f"{bn}.{size}.{k}.{sm}.{i}.txt", f"{bn}.{size}.{k}.{sm}.{i}.dist.bin", args.fname_paths, baselogf, sm, args.executable, args.time_path, args.skip_already_done)
+                        if all(not os.path.isfile(x) for x in (logf, baselogf + ".mashlog", baselogf + ".bindashlog")):
+                            submit(args.threads, k, size, f"{bn}.{size}.{k}.{sm}.{i}.txt", f"{bn}.{size}.{k}.{sm}.{i}.dist.bin",
+                                   args.fname_paths, logf, sm, executable=args.executable, time_path=args.time_path, skip_already=args.skip_already_done)
+                        elif not os.path.isfile(baselogf + ".mashlog"):
+                            submit_mashonly(args.threads, k, size, f"{bn}.{size}.{k}.{sm}.{i}.txt", f"{bn}.{size}.{k}.{sm}.{i}.dist.bin", args.fname_paths, baselogf, sm, args.executable, args.time_path, args.skip_already_done)
+                        if not os.path.isfile(baselogf + ".bindashlog"):
+                            submit_bindashonly(args.threads, k, size, f"{bn}.{size}.{k}.{sm}.{i}.txt", f"{bn}.{size}.{k}.{sm}.{i}.dist.bin", args.fname_paths, baselogf, sm, args.executable, args.time_path, args.skip_already_done)
+                    #else:
+                    #    submit(args.threads, k, size, f"{bn}.{size}.{k}.{sm}.{i}.txt", f"{bn}.{size}.{k}.{sm}.{i}.dist.bin", args.fname_paths, logf, sm, executable=args.executable, time_path=args.time_path, skip_already=args.skip_already_done)
+                    #    submit_mashonly(args.threads, k, size, f"{bn}.{size}.{k}.{sm}.{i}.txt", f"{bn}.{size}.{k}.{sm}.{i}.dist.bin", args.fname_paths, baselogf, sm, args.executable, args.time_path, args.skip_already_done)
+                    #    submit_bindashonly(args.threads, k, size, f"{bn}.{size}.{k}.{sm}.{i}.txt", f"{bn}.{size}.{k}.{sm}.{i}.dist.bin", args.fname_paths, baselogf, sm, args.executable, args.time_path, args.skip_already_done)
                     submit_dashing_nocache(args.threads, k, size, f"{bn}.{size}.{k}.{sm}.{i}.both.txt", f"{bn}.{size}.{k}.{sm}.{i}.both.dist.bin",
-                                           args.fname_paths, logf, sm, executable=args.executable, time_path=args.time_path, skip_already=args.skip_already_done)
+                                           args.fname_paths, baselogf, sm, executable=args.executable, time_path=args.time_path, skip_already=args.skip_already_done)
                     submit_mash_nocache(args.threads, k, size, f"{bn}.{size}.{k}.{sm}.{i}.txt", f"{bn}.{size}.{k}.{sm}.{i}.dist.bin",  args.fname_paths, baselogf, args.time_path)
 
                     run_num += 1
-                    print(f"Successfully ran experiment {run_num}/{i}", file=sys.stderr)
+                    print(f"Successfully ran experiment {run_num} in batch {i}", file=sys.stderr)
 
 
 if __name__ == "__main__":
