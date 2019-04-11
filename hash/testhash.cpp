@@ -105,7 +105,8 @@ void usage() {
 }
 
 int main(int argc, char *argv[]) {
-    if(auto it = std::find_if(argv, argv + argc, [](const auto x){return std::strcmp(x, "-h") == 0;}); it != argv + argc) usage();
+    auto it = std::find_if(argv, argv + argc, [](const auto x){return std::strcmp(x, "-h") == 0;});
+    if(it != argv + argc) usage();
     unsigned nthreads = argc > 1 ? std::strtoul(argv[1], nullptr, 10): 8;
     size_t niter      = argc > 2 ? std::strtoull(argv[2], nullptr, 10): 50;
     std::string prefix = argc > 3 ? argv[3]: "hlfout";
@@ -119,7 +120,7 @@ int main(int argc, char *argv[]) {
             for(auto nfiltl2: nfiltl2s)
                 combs.emplace_back(comb_t{size, nelem, nfiltl2});
     std::FILE *ofp = std::fopen((prefix + ".wang.out").data(), "w");
-    if(ofp == nullptr) throw std::runtime_error("Could not open file at "s + prefix + ".wang.out" + " for reading");
+    if(ofp == nullptr) throw std::runtime_error(std::string("Could not open file at ") + prefix + ".wang.out" + " for reading");
     std::fprintf(ofp, "#Mean error hlf\tMean error hll\tMean error hlf median\t""Mean error strength borrowing\t"
                        "Mean diffs hlf\tMean diffs hll\tMean diffs hlf med\tMean diffs strength borrowing\t"
                        "Mean fraction off (hll)\tmean frac off (hlf borrow)\tMean Ertl ML diff\tMean Ertl ML error\t"
@@ -135,7 +136,7 @@ int main(int argc, char *argv[]) {
        }
     }
     std::fclose(ofp);
-    if((ofp = std::fopen((prefix + ".mur.out").data(), "w")) == nullptr) throw std::runtime_error("Could not open file at "s + prefix + ".mur.out" + " for reading");
+    if((ofp = std::fopen((prefix + ".mur.out").data(), "w")) == nullptr) throw std::runtime_error(std::string("Could not open file at ") + prefix + ".mur.out" + " for reading");
     std::fprintf(ofp, "#Mean error hlf\tMean error hll\tMean error hlf median\t""Mean error strength borrowing\t"
                        "Mean diffs hlf\tMean diffs hll\tMean diffs hlf med\tMean diffs strength borrowing\t"
                        "Mean fraction off (hll)\tmean frac off (hlf borrow)\tMean Ertl ML diff\tMean Ertl ML error\t"
@@ -151,7 +152,7 @@ int main(int argc, char *argv[]) {
     }
     std::fclose(ofp);
     if((ofp = std::fopen((prefix + ".clhash.out").data(), "w")) == nullptr)
-        throw std::runtime_error("Could not open file at "s + prefix + ".clhash.out" + " for reading");
+        throw std::runtime_error(std::string("Could not open file at ") + prefix + ".clhash.out" + " for reading");
     std::fprintf(ofp, "#Mean error hlf\tMean error hll\tMean error hlf median\t""Mean error strength borrowing\t"
                        "Mean diffs hlf\tMean diffs hll\tMean diffs hlf med\tMean diffs strength borrowing\t"
                        "Mean fraction off (hll)\tmean frac off (hlf borrow)\tMean Ertl ML diff\tMean Ertl ML error\t"

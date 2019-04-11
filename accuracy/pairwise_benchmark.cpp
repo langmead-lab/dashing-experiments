@@ -72,7 +72,7 @@ struct skglob_t {
                 std::fprintf(stderr, "Could not open file at %s\n", path);
                 throw std::runtime_error("Could not open file at "s + path);
             }
-            Encoder enc(k);
+            Encoder<> enc(k);
     
             int khr;
             LOG_DEBUG("About to encode\n");
@@ -254,7 +254,7 @@ public:
     }
     template<typename T, typename Functor>
     void krange_for_each(T it1, T it2, const Functor &func) {
-        static_assert(std::is_integral_v<std::decay_t<decltype(*it1)>>, "Must be dereferenceable to an integral type.");
+        static_assert(std::is_integral<std::decay_t<decltype(*it1)>>::value, "Must be dereferenceable to an integral type.");
         {
             std::string v;
             for(T i = it1; i < it2; v += std::to_string(*i++), v += ',');
@@ -288,7 +288,8 @@ void usage() {
 ks::string make_fname(const char *fname, unsigned hllp, unsigned k, const std::string &scratch_folder, const char *suffix) {
     std::string pref = scratch_folder.size() ? std::string(scratch_folder + '/'): std::string("");
     std::string ps;
-    if(const char *p = std::strrchr(fname, '/'); p) ps = (p + 1);
+    const char *p = std::strrchr(fname, '/');
+    if(p) ps = (p + 1);
     else ps = fname;
     return ks::sprintf("%s%s__.s%zu.k%u.%s", pref.data(), ps.data(), size_t(1) << (hllp - (2 + (k > 16))), k, suffix);
 }
@@ -317,7 +318,8 @@ ks::string sketch_bindash(const char *path, unsigned hllp, unsigned k, const std
             std::fprintf(stderr, "[%s:%s:%d] Failed to perform bindash command on try %u. Error code: %i. Message: %s\n", __FILE__, __PRETTY_FUNCTION__, __LINE__, ntries, errno, std::strerror(errno));
         }
     } while(sketch == nullptr);
-    if(int retcode = pclose(sketch) >> 8; retcode) {
+    int retcode = pclose(sketch) >> 8;
+    if(retcode) {
         std::fprintf(stderr, "sketch failed with error code %d for command %s. errno: %d/%s\n", retcode, cstr.data(), errno, std::strerror(errno));
         std::fflush(stderr);
         std::exit(1);
@@ -344,7 +346,8 @@ ks::string sketch_mash(const char *path, unsigned hllp, unsigned k, const std::s
         }
         std::fprintf(stderr, "[%s:%s:%d] Failed to perform mash command on try %u. Error code: %i. Message: %s\n", __FILE__, __PRETTY_FUNCTION__, __LINE__, ntries, errno, std::strerror(errno));
     } while(sketch == nullptr);
-    if(int retcode = pclose(sketch) >> 8; retcode) {
+    int retcode = pclose(sketch) >> 8;
+    if(retcode) {
         std::fprintf(stderr, "sketch failed with error code %d for command %s. errno: %d/%s\n", retcode, cstr.data(), errno, std::strerror(errno));
         std::fflush(stderr);
         std::exit(1);
@@ -391,14 +394,15 @@ double get_mash_ji(const char *path1, const char *path2) {
     begin:
     if((fp = popen(ks::sprintf("mash dist -d 0. -j %s %s\n", path1, path2).data(), "r")) == nullptr) throw std::runtime_error("Could not get mash dist to run.");
     for(int c; (c = std::fgetc(fp)) >= 0; output += c);
-    if(int rc = pclose(fp); rc) {
+    int rc;
+    if((rc = pclose(fp)) != 0) {
         if(++ntries == 5)
             throw std::runtime_error("Error closing mash dist call");
         LOG_INFO("Mash dist call failed on try %i with retcode %d, errno %d and strerror %s. Try again...\n", ntries, rc, errno, strerror(errno));
         goto begin;
     }
     // I could actually parse this in a streaming fashion...
-    char *p = output.data();
+    char *p = &output[0];
     while(!std::isspace(*p)) ++p;
     while(std::isspace(*p)) ++p;
     while(!std::isspace(*p)) ++p;
@@ -431,7 +435,7 @@ auto main(int argc, char *argv[]) -> int {
                         LOG_INFO("Note: only one kmer size provided.\n");
                         break;
                     }
-                    char *p1 = arg.data(), *p2 = std::strchr(p1, ',');
+                    char *p1 = &arg[0], *p2 = std::strchr(p1, ',');
                     *p2++ = '\0';
                     kmersizes.clear();
                     for(int i = std::atoi(p1); i <= std::atoi(p2); kmersizes.push_back(i++));
@@ -445,7 +449,7 @@ auto main(int argc, char *argv[]) -> int {
                         LOG_INFO("Note: only one sketch size provided.\n");
                         break;
                     }
-                    char *p1 = arg.data(), *p2 = std::strchr(p1, ',');
+                    char *p1 = &arg[0], *p2 = std::strchr(p1, ',');
                     *p2++ = '\0';
                     pstart = std::atoi(p1), pend = std::atoi(p2);
                     break;

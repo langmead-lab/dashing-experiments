@@ -3,6 +3,12 @@
 This repository contains code and data for reproducing experiments from the manuscript accompanying
 the Dashing software application, available at https://github.com/dnbaker/dashing.
 
+### Build instructions
+
+To build executables, either `git clone --recursive bonsai && make`, or if you have bonsai available on your system (with its submodules), `make BONSAI_DIR=$PATH_TO_BONSAI`.
+
+Like dashing and bonsai, these require C++14.
+
 #### dsexp
 dsexp contains experiments testing the performance of various data structures for Jaccard-coefficient calculation.
 
