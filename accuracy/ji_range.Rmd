@@ -13,10 +13,11 @@ library(tables)
 library(grid)
 library(gridExtra)
 library(tables)
+library(latex2exp)
 ```
 
 ```{r wd}
-setwd('~/git/bonsai-experiments/hll')
+setwd('~/git/dashing-experiments/accuracy')
 ```
 
 ```{r grid_arrange_shared_legend}
@@ -66,7 +67,7 @@ m_gath <- m_orig %>%
 
 
 ```{r tabulate_big}
-ji_range_table <- function(m, fn='ji_range') {
+ji_range_table <- function(m, fn='ji_range', summary='mean') {
     
     xform_gath <- function(mtmp) {
         m <- mtmp %>% select(-Path1, -Path2)
@@ -86,8 +87,9 @@ ji_range_table <- function(m, fn='ji_range') {
                      'HLL (Ertl-JMLE)'))
         m$method <- factor(m$method)
         m$method <- factor(m$method, levels(m$method)[c(5, 1, 4, 3, 2)])
+        summ <- if(summary == 'mean') { mean } else { median }
         m <- m %>% group_by(exact_bin, k, p, method) %>% 
-              summarise(n=n(), ji_diff_summ=mean(ji_diff**2))
+              summarise(n=n(), ji_diff_summ=summ(ji_diff**2))
         m$exact_bin <- factor(paste0(m$exact_bin, ' -- ', m$exact_bin + 0.1))
         m
     }
@@ -113,8 +115,14 @@ ji_range_table <- function(m, fn='ji_range') {
     
     list(big=tab_bg, small=tab_sm)
 }
+```
 
-ji_range_table(m_gath)
+```{r tabulate_big_mean}
+ji_range_table(m_gath, fn='ji_range_mean', summary='mean')
+```
+
+```{r tabulate_big_median}
+ji_range_table(m_gath, fn='ji_range_median', summary='median')
 ```
 
 The following summarizes sum-of-squared-errors for each of the estimation methods _overall_, over all sketch sizes and k-mer lengths.  So maybe not so informative for the paper but a nice check that what we think about the relative merits is true overall.
@@ -180,4 +188,40 @@ plot_ji_range_4panel(m_gath)
 dev.off()
 
 plot_ji_range_4panel(m_gath)
+```
+
+```{r error_boxplot_k16}
+plot_for_kmer_and_p_box <- function(m, k, p) {
+    mtmp <- m %>%
+        filter(KmerSize == k, Bytes.in.Sketch == p)
+    mtmp$decile <- floor(mtmp$Exact * 10) / 10.0
+    mtmp$decile <- factor(paste0('[', mtmp$decile, ', ', mtmp$decile+0.1, ')'))
+    ggplot(mtmp, aes(x=decile, y=ji_diff, color=method)) +
+        theme_bw() +
+        theme(legend.title=element_blank(), axis.text.x = element_text(angle = 45, hjust = 1)) +
+        geom_abline(slope=0, intercept=0) +
+        geom_boxplot() +
+        labs(x=paste0('True J'), y='Est J - True J', title=TeX(sprintf('k = %d, $\\log_2$(sketch bytes) = %d', k, p)))
+}
+
+plot_ji_range_4panel_box <- function(m) {
+    mtmp <- m_gath %>% filter(method == 'MLE' | method == 'mash' | method == 'bindash')
+    mtmp$method <- plyr::mapvalues(
+        factor(mtmp$method),
+        from = c('MLE', 'mash', 'bindash'), to = c('Dashing (MLE)', 'Mash   ', 'BinDash   '))
+    mtmp$method <- factor(mtmp$method, levels(mtmp$method)[c(2, 1, 3)])
+    kp1 <- plot_for_kmer_and_p_box(mtmp, 16, 10)
+    kp2 <- plot_for_kmer_and_p_box(mtmp, 16, 14)
+    kp3 <- plot_for_kmer_and_p_box(mtmp, 21, 10)
+    kp4 <- plot_for_kmer_and_p_box(mtmp, 21, 14)
+    grid_arrange_shared_legend(kp1, kp2, kp3, kp4, ncol=2, nrow=2, position='bottom')
+}
+```
+
+```{r}
+pdf(file='dashing_ji_range_box.pdf', onefile=F)
+plot_ji_range_4panel_box(m_gath)
+dev.off()
+
+plot_ji_range_4panel_box(m_gath)
 ```
